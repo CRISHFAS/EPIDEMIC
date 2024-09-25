@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulación de Epidemia</title>
+    <style>
+        /* Estilos generales */
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f4f4f4;
+            color: #333;
+            margin: 0;
+            padding: 0;
+        }
+
+        h1, h2, h3 {
+            text-align: center;
+            color: #2c3e50;
+        }
+
+        p {
+            text-align: justify;
+            margin: 0 15%;
+            color: #34495e;
+        }
+
+        #container {
+            text-align: center;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        canvas {
+            display: block;
+            margin: 10px auto;
+            border: 2px solid #2c3e50;
+            border-radius: 10px;
+            background-color: #ffffff;
+        }
+
+        #canvasText {
+            font-weight: bold;
+            color: #e74c3c;
+            margin-top: 10px;
+        }
+
+        /* Estilos del botón */
+        button {
+            background-color: #3498db;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+
+        button:hover {
+            background-color: #2980b9;
+        }
+
+        footer {
+            text-align: center;
+            padding: 10px;
+            margin-top: 20px;
+            background-color: #2c3e50;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Encabezado -->
+    <header>
+        <h1>Simulación Científica de Propagación de una Epidemia</h1>
+    </header>
+
+    <!-- Introducción -->
+    <section>
+        <h2>Descripción de la Simulación</h2>
+        <p>
+            Esta simulación ilustra cómo se propaga una enfermedad infecciosa dentro de una población. Cada punto en el lienzo
+            representa a una persona, y a medida que estas se mueven, las colisiones entre personas infectadas y no infectadas
+            pueden propagar la infección. Los individuos infectados eventualmente se curan o mueren, dependiendo de varios 
+            factores como el tiempo de infección y la probabilidad de muerte.
+        </p>
+        <p>
+            El gráfico debajo del lienzo muestra la evolución del número de personas infectadas en el tiempo. Los individuos
+            sanos se representan en azul, los infectados en rojo y los curados en verde.
+        </p>
+    </section>
+
+    <!-- Simulación -->
+    <div id="container">
+        <canvas id="Canvas"></canvas>
+        <canvas id="Chart"></canvas>
+        <p id="canvasText"></p>
+        <button onclick="location.reload()">Reiniciar Simulación</button>
+    </div>
+
+    <!-- Información de parámetros -->
+    <section>
+        <h2>Parámetros de la Simulación</h2>
+        <p>
+            Los siguientes parámetros controlan el comportamiento de la simulación:
+        </p>
+        <ul>
+            <li><strong>Cantidad de personas (nrPeople):</strong> 500</li>
+            <li><strong>Velocidad de movimiento (speed):</strong> Proporcional al tamaño del lienzo</li>
+            <li><strong>Tiempo de curación (cureTime):</strong> 5 unidades de tiempo</li>
+            <li><strong>Probabilidad de muerte (deathProb):</strong> 5%</li>
+            <li><strong>Probabilidad de infección en una colisión (infectProb):</strong> 100%</li>
+        </ul>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <p>Simulación desarrollada para propósitos educativos y científicos. © 2024</p>
+    </footer>
+
+    <!-- Script de simulación -->
+    <script>
+        (function () {
+            var canvas = document.getElementById("Canvas");
+            var chart = document.getElementById("Chart");
+
+            canvas.width = Math.min(window.innerWidth - 50, window.innerHeight - 50);
+            if (canvas.width < 300) canvas.width = 300;
+            else if (canvas.width > 800) canvas.width = 800;
+            canvas.height = canvas.width;
+
+            chart.width = canvas.width;
+            chart.height = chart.width / 3;
+
+            var ctx = canvas.getContext("2d");
+            var canvasText = document.getElementById("canvasText");
+
+            var ctxChart = chart.getContext("2d");
+            ctxChart.strokeStyle = "#FF0000";
+            ctxChart.lineWidth = 4;
+
+            var people = [];
+
+            // algunos parámetros
+            var nrPeople = 500;
+            var speed = canvas.width / 50.;
+            var radius = canvas.width / 100.;
+            var deltat = 0.01;
+            var cureTime = 5.;
+            var deathProb = 0.05;
+            var infectProb = 1.;
+
+            // gráfico
+            var chartPosX = 0;
+            var chartValY = 0;
+            var chartXScale = 0.1;
+            var chartYScale = chart.height / nrPeople;
+
+            // estadísticas
+            var deaths = 0;
+            var infections = 1;
+            var cures = 0;
+
+            function Init() {
+                deaths = 0;
+                infections = 1;
+                cures = 0;
+                people = [];
+                chartPosX = 0;
+                chartValY = 0;
+
+                for (i = 0; i < nrPeople; ++i) {
+                    var person =
+                    {
+                        posX: 0,
+                        posY: 0,
+                        velX: 0,
+                        velY: 0,
+                        dead: false,
+                        infected: false,
+                        cured: false,
+                        infectedTime: 0.0,
+
+                        NormalizeVelocity: function () {
+                            var len = Math.sqrt(this.velX * this.velX + this.velY * this.velY);
+                            this.velX /= len;
+                            this.velY /= len;
+                        },
+
+                        Distance: function (other) {
+                            var distX = this.posX - other.posX;
+                            var distY = this.posY - other.posY;
+
+                            return Math.sqrt(distX * distX + distY * distY);
+                        },
+
+                        Collision: function (other) {
+                            var dist = this.Distance(other);
+
+                            return dist <= 2. * radius;
+                        },
+
+                        Collide: function (other) {
+                            var velXdif = this.velX - other.velX;
+                            var velYdif = this.velY - other.velY;
+
+                            var posXdif = this.posX - other.posX;
+                            var posYdif = this.posY - other.posY;
+
+                            var dist2 = posXdif * posXdif + posYdif * posYdif;
+                            var dotProd = velXdif * posXdif + velYdif * posYdif;
+                            dotProd /= dist2;
+
+                            this.velX -= dotProd * posXdif;
+                            this.velY -= dotProd * posYdif;
+
+                            other.velX += dotProd * posXdif;
+                            other.velY += dotProd * posYdif;
+                        }
+                    };
+
+                    for (; ;) {
+                        var X = Math.floor(Math.random() * (canvas.width - 2. * radius)) + radius;
+                        var Y = Math.floor(Math.random() * (canvas.height - 2 * radius)) + radius;
+
+                        person.posX = X;
+                        person.posY = Y;
+
+                        overlap = false;
+                        for (j = 0; j < i; ++j) {
+                            var person2 = people[j];
+                            if (person2.Collision(person)) {
+                                overlap = true;
+                                break;
+                            }
+                        }
+                        if (!overlap) break;
+                    }
+
+                    person.velX = Math.random() - 0.5;
+                    person.velY = Math.random() - 0.5;
+                    person.NormalizeVelocity();
+                    person.velX *= speed;
+                    person.velY *= speed;
+
+                    if (i == 0) person.infected = true;
+
+                    people.push(person);
+                }
+            }
+
+            Init();
+
+            function Advance() {
+                // para cada persona en la población
+                for (i = 0; i < nrPeople; ++i) {
+                    var person = people[i];
+                    if (person.dead) continue;
+
+                    // movimiento
+                    person.posX += person.velX * deltat;
+                    person.posY += person.velY * deltat;
+
+                    // colisiones con las paredes
+                    if (person.posX <= radius) {
+                        person.velX *= -1;
+                        person.posX = radius;
+                    }
+                    else if (person.posX >= canvas.width - radius) {
+                        person.velX *= -1;
+                        person.posX = canvas.width - radius;
+                    }
+
+                    if (person.posY <= radius) {
+                        person.velY *= -1;
+                        person.posY = radius;
+                    }
+                    else if (person.posY >= canvas.height - radius) {
+                        person.velY *= -1;
+                        person.posY = canvas.height - radius;
+                    }
+
+                    // tiempo de infección
+                    if (person.infected)
+                        person.infectedTime += deltat;
+
+                    // colisiones e infecciones
+                    for (j = 0; j < i; ++j) {
+                        var person2 = people[j];
+                        if (person2.dead) continue;
+
+                        if (person.Collision(person2)) {
+                            person.Collide(person2);
+
+                            if (person.infected && !person2.infected && !person2.cured) {
+                                if (Math.random() < infectProb)
+                                {
+                                   person2.infected = true;
+                                   ++infections;
+                                }
+                            }
+                            else if (person2.infected && !person.infected && !person.cured) {
+                                if (Math.random() < infectProb)
+                                {
+                                   person.infected = true;
+                                   ++infections;
+                                }
+                            }
+                        }
+                    }
+
+                    // curar
+                    if (person.infected && person.infectedTime > cureTime) {
+                        person.infected = false;
+                        person.cured = true;
+                        ++cures;
+                    }
+
+                    // matar
+                    if (person.infected && person.infectedTime > cureTime / 3.) {
+                        if (Math.random() < deathProb * deltat / (cureTime * 2. / 3.)) {
+                            person.dead = true;
+                            ++deaths;
+                        }
+                    }
+                }
+
+                // visualización
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                for (i = 0; i < nrPeople; ++i) {
+                    var person = people[i];
+                    if (person.dead) continue;
+                    ctx.beginPath();
+                    ctx.arc(person.posX, person.posY, radius, 0, 2 * Math.PI, false);
+                    ctx.fillStyle = person.infected ? 'red' : (person.cured ? 'green' : 'blue');
+                    ctx.fill();
+                    ctx.stroke();
+                }
+
+                canvasText.innerHTML = "Total: " + nrPeople + " Infectados: " + infections + " Muertos: " + deaths + " Curados: " + cures + " Enfermos: " + (infections - cures - deaths);
+
+                ctxChart.beginPath();
+                ctxChart.moveTo(chartPosX * chartXScale, chart.height - chartValY * chartYScale);
+                ++chartPosX;  
+                chartValY = infections;      
+                ctxChart.lineTo(chartPosX * chartXScale, chart.height - chartValY * chartYScale);
+                ctxChart.stroke();
+               
+                if (infections - deaths == cures) // no quedan más personas por curar
+                {
+                    ctxChart.clearRect(0, 0, chart.width, chart.height);
+                    Init();
+                }
+            }
+
+            setInterval(Advance, 10);
+        })();
+    </script>
+
+</body>
+</html>
+
